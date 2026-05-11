@@ -1,0 +1,4 @@
+COPY telco_customers
+FROM 'C:/path/telco.csv'
+DELIMITER ','
+CSV HEADER;
