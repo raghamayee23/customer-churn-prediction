@@ -1,0 +1,152 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
+
+# Initialize FastAPI
+
+app = FastAPI(
+    title="Customer Churn Prediction API",
+    description="Predict customer churn using Machine Learning",
+    version="1.0"
+)
+
+# Load Dataset
+
+df = pd.read_csv("featured_telco.csv")
+
+# Encode Text Columns
+
+encoders = {}
+
+for col in df.columns:
+
+    if df[col].dtype == 'O' or str(df[col].dtype) == 'str':
+
+        encoder = LabelEncoder()
+
+        df[col] = encoder.fit_transform(df[col].astype(str))
+
+        encoders[col] = encoder
+
+# Fill Missing Values
+
+df.fillna(0, inplace=True)
+
+# Remove customerID
+
+if "customerID" in df.columns:
+    df.drop("customerID", axis=1, inplace=True)
+
+# Features and Target
+
+X = df.drop("Churn", axis=1)
+y = df["Churn"]
+
+# Train Model
+
+model = XGBClassifier(
+    use_label_encoder=False,
+    eval_metric='logloss'
+)
+
+model.fit(X, y)
+
+# Input Schema
+
+class CustomerData(BaseModel):
+
+    gender: int
+    SeniorCitizen: int
+    Partner: int
+    Dependents: int
+    tenure: int
+    MonthlyCharges: float
+    TotalCharges: float
+
+# Home Route
+
+@app.get("/")
+
+def home():
+
+    return {
+        "message": "Customer Churn Prediction API Running Successfully"
+    }
+
+# Prediction Route
+
+@app.post("/predict")
+
+def predict(data: CustomerData):
+
+    input_data = pd.DataFrame([{
+        "gender": data.gender,
+        "SeniorCitizen": data.SeniorCitizen,
+        "Partner": data.Partner,
+        "Dependents": data.Dependents,
+        "tenure": data.tenure,
+        "MonthlyCharges": data.MonthlyCharges,
+        "TotalCharges": data.TotalCharges
+    }])
+
+    for col in X.columns:
+
+        if col not in input_data.columns:
+            input_data[col] = 0
+
+
+    input_data = input_data[X.columns]
+
+    prediction = model.predict(input_data)[0]
+
+    result = "Customer Will Churn" if prediction == 1 else "Customer Will Stay"
+
+    return {
+        "prediction": result
+    }
+
+@app.post("/batch_predict")
+
+def batch_predict(customers: list[CustomerData]):
+
+    input_list = []
+
+    for customer in customers:
+
+        input_list.append({
+            "gender": customer.gender,
+            "SeniorCitizen": customer.SeniorCitizen,
+            "Partner": customer.Partner,
+            "Dependents": customer.Dependents,
+            "tenure": customer.tenure,
+            "MonthlyCharges": customer.MonthlyCharges,
+            "TotalCharges": customer.TotalCharges
+        })
+
+    input_data = pd.DataFrame(input_list)
+
+    # Add missing columns
+
+    for col in X.columns:
+
+        if col not in input_data.columns:
+            input_data[col] = 0
+
+    input_data = input_data[X.columns]
+
+    predictions = model.predict(input_data)
+
+    results = []
+
+    for pred in predictions:
+
+        if pred == 1:
+            results.append("Customer Will Churn")
+        else:
+            results.append("Customer Will Stay")
+
+    return {
+        "batch_predictions": results
+    }
